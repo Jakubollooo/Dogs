@@ -579,22 +579,24 @@ fun AddDogScreen(
 ) {
     var dogName by remember { mutableStateOf("") }
     var dogBreed by remember { mutableStateOf("") }
-    var imageUrl by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var imageUrl by remember { mutableStateOf<DogImageState>(DogImageState.Loading) }
 
     LaunchedEffect(Unit) {
-        isLoading = true
         try {
             val response = RetrofitClient.apiService.getRandomDogImage()
-            imageUrl = response.message
+            imageUrl = if (response.status == "success") {
+                DogImageState.Success(response.message)
+            } else {
+                DogImageState.Error
+            }
         } catch (e: Exception) {
             println("Failed to load image: ${e.message}")
-        } finally {
-            isLoading = false
+            imageUrl = DogImageState.Error
         }
     }
 
-    val isButtonEnabled = dogName.isNotBlank() && dogBreed.isNotBlank()
+    val isButtonEnabled = dogName.isNotBlank() && dogBreed.isNotBlank() && imageUrl is DogImageState.Success
+
     val buttonColor = if (isButtonEnabled) {
         Brush.horizontalGradient(listOf(Color(0xFFEE82EE), Color(0xFFBA55D3)))
     } else {
@@ -614,27 +616,32 @@ fun AddDogScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (isLoading) {
-                CircularProgressIndicator()
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(240.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Gray.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (imageUrl != null) {
+            Box(
+                modifier = Modifier
+                    .size(240.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Gray.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                when (val state = imageUrl) {
+                    is DogImageState.Loading -> {
+                        CircularProgressIndicator()
+                    }
+                    is DogImageState.Success -> {
                         AsyncImage(
-                            model = imageUrl,
+                            model = state.url,
                             contentDescription = "Random dog image",
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(RoundedCornerShape(16.dp)),
                             contentScale = ContentScale.Crop
                         )
-                    } else {
-                        Text("No photo", color = Color.Gray)
+                    }
+                    is DogImageState.Error -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("⚠️", fontSize = 60.sp)
+                            Text("Failed to load image", color = Color.Gray)
+                        }
                     }
                 }
             }
@@ -663,7 +670,7 @@ fun AddDogScreen(
             Button(
                 onClick = {
                     if (isButtonEnabled) {
-                        onDogAdded(Dog(name = dogName, breed = dogBreed, imageUrl = imageUrl))
+                        onDogAdded(Dog(name = dogName, breed = dogBreed, imageUrl = (imageUrl as DogImageState.Success).url))
                     }
                 },
                 enabled = isButtonEnabled,
@@ -678,6 +685,12 @@ fun AddDogScreen(
             }
         }
     }
+}
+
+sealed class DogImageState {
+    data object Loading : DogImageState()
+    data class Success(val url: String) : DogImageState()
+    data object Error : DogImageState()
 }
 
 object RetrofitClient {
