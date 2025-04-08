@@ -310,8 +310,9 @@ fun DogItem(
                     model = dog.imageUrl,
                     contentDescription = "Dog image of ${dog.name}",
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .size(40.dp) // Ustalony rozmiar kwadratu
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop // Dodane ContentScale.Crop
                 )
             } else {
                 Box(
@@ -544,7 +545,7 @@ fun AddDogScreen(
             val response = RetrofitClient.apiService.getRandomDogImage()
             imageUrl = response.message
         } catch (e: Exception) {
-            println("Error loading photo: ${e.message}")
+            println("Image download error: ${e.message}")
         } finally {
             isLoading = false
         }
@@ -585,8 +586,9 @@ fun AddDogScreen(
                             model = imageUrl,
                             contentDescription = "Random dog image",
                             modifier = Modifier
-                                .size(120.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Crop
                         )
                     } else {
                         Text("No photo", color = Color.Gray)
@@ -606,6 +608,7 @@ fun AddDogScreen(
                 label = { Text("Dog's Breed") },
                 modifier = Modifier.fillMaxWidth()
             )
+
             if (errorMessage != null) {
                 Text(
                     text = errorMessage,
