@@ -23,6 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dogs.ui.theme.DogsTheme
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.serialization.Serializable
 import retrofit2.http.GET
@@ -335,12 +339,30 @@ fun DogItem(
                 Text(text = dog.breed, style = TextStyle(fontSize = 14.sp, color = Color.Gray))
             }
             IconButton(onClick = { onLikeClick(dog) }) {
-                val icon = if (dog.isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder
-                val tintColor = if (dog.isLiked) Color(0xFF9400D3) else Color.Gray
+                val icon = if (dog.isLiked) Icons.Filled.Favorite else Icons.Default.FavoriteBorder
+                val brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF6A5ACD),
+                        Color(0xFFFFC0CB)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(50f, 100f)
+                )
+
                 Icon(
+                    modifier = Modifier
+                        .graphicsLayer(alpha = 0.99f)
+                        .drawWithCache {
+                            onDrawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush,
+                                    blendMode = BlendMode.SrcAtop
+                                )
+                            }
+                        },
                     imageVector = icon,
                     contentDescription = "Like",
-                    tint = tintColor
                 )
             }
             IconButton(onClick = { onRemoveClick(dog) }) {
@@ -436,7 +458,29 @@ fun DogCounter(dogCount: Int, likedCount: Int) {
         }
         Spacer(modifier = Modifier.width(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Favorite, contentDescription = "Number of Liked Dogs", tint = Color(0xFF9400D3))
+            val brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(0xFF6A5ACD),
+                    Color(0xFFFFC0CB)
+                ),
+                start = Offset(0f, 0f),
+                end = Offset(50f, 100f)
+            )
+            Icon(
+                modifier = Modifier
+                    .graphicsLayer(alpha = 0.99f)
+                    .drawWithCache {
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(
+                                brush,
+                                blendMode = BlendMode.SrcAtop
+                            )
+                        }
+                    },
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "Number of Liked Dogs",
+            )
             Spacer(modifier = Modifier.width(4.dp))
             Text(text = "$likedCount", fontSize = 16.sp)
         }
@@ -492,15 +536,14 @@ fun DogDetailsScreen(
                         .build(),
                     contentDescription = "Image of ${dog.name}",
                     modifier = Modifier
-                        .size(120.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Gray.copy(alpha = 0.2f)),
+                        .size(240.dp)
+                        .clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop,
                 )
             } else {
                 Box(
                     modifier = Modifier
-                        .size(120.dp)
+                        .size(240.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(
                             brush = Brush.horizontalGradient(
@@ -545,7 +588,7 @@ fun AddDogScreen(
             val response = RetrofitClient.apiService.getRandomDogImage()
             imageUrl = response.message
         } catch (e: Exception) {
-            println("Image download error: ${e.message}")
+            println("Failed to load image: ${e.message}")
         } finally {
             isLoading = false
         }
@@ -576,7 +619,7 @@ fun AddDogScreen(
             } else {
                 Box(
                     modifier = Modifier
-                        .size(120.dp)
+                        .size(240.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(Color.Gray.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
