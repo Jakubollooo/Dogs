@@ -1,5 +1,6 @@
 package com.example.dogs
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,8 +31,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dogs.ui.theme.DogsTheme
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import kotlinx.serialization.Serializable
+import retrofit2.http.GET
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import retrofit2.Retrofit
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 
-data class Dog(val name: String, var isLiked: Boolean = false, val owner: String = "Jack Russel")
+interface DogApiService {
+    @GET("breeds/image/random")
+    suspend fun getRandomDogImage(): DogApiResponse
+}
+
+@Serializable
+data class DogApiResponse(
+    val message: String,
+    val status: String
+)
+
+data class Dog(val name: String, var isLiked: Boolean = false, val breed: String = "Unknown", val imageUrl: String? = null)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,20 +62,21 @@ class MainActivity : ComponentActivity() {
             DogsTheme {
                 val dogs = remember { mutableStateOf(emptySet<Dog>()) }
                 var searchText by remember { mutableStateOf("") }
-                var searching by remember { mutableStateOf(false) }
                 var isError by remember { mutableStateOf(false) }
                 var selectedDog by remember { mutableStateOf<Dog?>(null) }
                 var currentScreen by remember { mutableStateOf<Screen>(Screen.DogList) }
+                var newDog by remember { mutableStateOf<Dog?>(null) }
+                var addDogError by remember { mutableStateOf<String?>(null) }
 
-                val filteredDogs = remember(dogs.value, searchText, searching) {
+                val filteredDogs = remember(dogs.value, searchText) {
                     val likedDogs = dogs.value.filter { it.isLiked }.sortedBy { it.name }
                     val unlikedDogs = dogs.value.filter { !it.isLiked }.sortedBy { it.name }
                     val allDogs = likedDogs + unlikedDogs
 
-                    if (searchText.isEmpty() || !searching) {
+                    if (searchText.isEmpty()) {
                         allDogs
                     } else {
-                        allDogs.filter { it.name.contains(searchText, ignoreCase = true) }
+                        allDogs.filter { it.name.startsWith(searchText, ignoreCase = true) }
                     }
                 }
 
@@ -75,24 +100,7 @@ class MainActivity : ComponentActivity() {
                                                 searchText = it
                                                 isError = false
                                             },
-                                            onSearch = {
-                                                searching = true
-                                            },
-                                            onClearSearch = {
-                                                searchText = ""
-                                                searching = false
-                                            },
-                                            onAdd = { name ->
-                                                if (name.isNotBlank()) {
-                                                    if (dogs.value.none { it.name.equals(name, ignoreCase = true) }) {
-                                                        dogs.value += Dog(name)
-                                                        searchText = ""
-                                                        isError = false
-                                                    } else {
-                                                        isError = true
-                                                    }
-                                                }
-                                            },
+                                            onAddClick = { currentScreen = Screen.AddDog },
                                             isError = isError,
                                             modifier = Modifier.fillMaxWidth()
                                         )
@@ -133,7 +141,8 @@ class MainActivity : ComponentActivity() {
                                         dogs.value = dogs.value.filter { it.name != dog.name }.toSet()
                                         selectedDog = null
                                     },
-                                    modifier = Modifier.padding(innerPadding)
+                                    modifier = Modifier.padding(innerPadding),
+                                    context = this
                                 )
                             }
                         }
@@ -143,6 +152,28 @@ class MainActivity : ComponentActivity() {
                         Screen.Profile -> {
                             ProfileScreen(onBackClick = { currentScreen = Screen.DogList })
                         }
+                        Screen.AddDog -> {
+                            AddDogScreen(
+                                onBackClick = { currentScreen = Screen.DogList },
+                                onDogAdded = { dog ->
+                                    if (dogs.value.any { it.name.equals(dog.name, ignoreCase = true) }) {
+                                        addDogError = "Dog with this name already exists."
+                                    } else {
+                                        newDog = dog
+                                        addDogError = null
+                                        currentScreen = Screen.DogList
+                                    }
+                                },
+                                modifier = Modifier.padding(innerPadding),
+                                errorMessage = addDogError
+                            )
+                        }
+                    }
+                }
+                LaunchedEffect(newDog) {
+                    newDog?.let { dog ->
+                        dogs.value += dog
+                        newDog = null
                     }
                 }
             }
@@ -150,12 +181,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
 sealed class Screen {
     data object DogList : Screen()
     data object Settings : Screen()
     data object Profile : Screen()
+    data object AddDog : Screen()
 }
-
 @Composable
 fun SettingsScreen(onBackClick: () -> Unit, modifier: Modifier = Modifier) {
     Scaffold(
@@ -273,23 +305,33 @@ fun DogItem(
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(Color(0xFFEE82EE), Color(0xFFBA55D3))
+            if (dog.imageUrl != null) {
+                AsyncImage(
+                    model = dog.imageUrl,
+                    contentDescription = "Dog image of ${dog.name}",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(Color(0xFFEE82EE), Color(0xFFBA55D3))
+                            ),
+                            shape = RoundedCornerShape(8.dp)
                         ),
-                        shape = RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "🐕", fontSize = 20.sp)
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "🐕", fontSize = 20.sp)
+                }
             }
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = dog.name, style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold))
-                Text(text = dog.owner, style = TextStyle(fontSize = 14.sp, color = Color.Gray))
+                Text(text = dog.breed, style = TextStyle(fontSize = 14.sp, color = Color.Gray))
             }
             IconButton(onClick = { onLikeClick(dog) }) {
                 val icon = if (dog.isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder
@@ -353,9 +395,7 @@ fun TopAppBar(
 fun DogSearchBar(
     searchText: String,
     onSearchTextChange: (String) -> Unit,
-    onSearch: () -> Unit,
-    onClearSearch: () -> Unit,
-    onAdd: (String) -> Unit,
+    onAddClick: () -> Unit,
     isError: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -368,21 +408,14 @@ fun DogSearchBar(
             value = searchText,
             onValueChange = onSearchTextChange,
             modifier = Modifier.weight(1f),
-            placeholder = { Text("Search or add a dog 🐕") },
+            placeholder = { Text("Search for a dog 🐕") },
             isError = isError
         )
         Spacer(modifier = Modifier.width(8.dp))
         IconButton(
-            onClick = { if (searchText.isNotEmpty()) onSearch() else onClearSearch() },
-            enabled = searchText.isNotEmpty()
+            onClick = onAddClick,
         ) {
-            Icon(Icons.Filled.Search, contentDescription = "Search")
-        }
-        IconButton(
-            onClick = { onAdd(searchText) },
-            enabled = searchText.isNotEmpty()
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Add")
+            Icon(Icons.Filled.Add, contentDescription = "Add a dog")
         }
     }
 }
@@ -414,7 +447,8 @@ fun DogDetailsScreen(
     dog: Dog,
     onBackClick: () -> Unit,
     onRemoveClick: (Dog) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    context: Context
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Box(
@@ -450,18 +484,32 @@ fun DogDetailsScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(Color(0xFFEE82EE), Color(0xFFBA55D3))
+            if (dog.imageUrl != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(dog.imageUrl)
+                        .build(),
+                    contentDescription = "Image of ${dog.name}",
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Gray.copy(alpha = 0.2f)),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(Color(0xFFEE82EE), Color(0xFFBA55D3))
+                            )
                         ),
-                        shape = RoundedCornerShape(16.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "🐕", fontSize = 60.sp)
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "🐕", fontSize = 60.sp)
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -470,10 +518,135 @@ fun DogDetailsScreen(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = dog.owner,
+                text = dog.breed,
                 style = TextStyle(fontSize = 18.sp),
                 color = Color.Gray
             )
         }
+    }
+}
+
+@Composable
+fun AddDogScreen(
+    onBackClick: () -> Unit,
+    onDogAdded: (Dog) -> Unit,
+    modifier: Modifier = Modifier,
+    errorMessage: String? = null
+) {
+    var dogName by remember { mutableStateOf("") }
+    var dogBreed by remember { mutableStateOf("") }
+    var imageUrl by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        isLoading = true
+        try {
+            val response = RetrofitClient.apiService.getRandomDogImage()
+            imageUrl = response.message
+        } catch (e: Exception) {
+            println("Error loading photo: ${e.message}")
+        } finally {
+            isLoading = false
+        }
+    }
+
+    val isButtonEnabled = dogName.isNotBlank() && dogBreed.isNotBlank()
+    val buttonColor = if (isButtonEnabled) {
+        Brush.horizontalGradient(listOf(Color(0xFFEE82EE), Color(0xFFBA55D3)))
+    } else {
+        Brush.horizontalGradient(listOf(Color.Gray, Color.Gray))
+    }
+    val buttonTextColor = if (isButtonEnabled) Color.White else Color.DarkGray
+
+    Scaffold(
+        topBar = { TopBarWithBackButton(onBackClick = onBackClick, title = "Add a Dog") },
+        modifier = modifier.fillMaxSize()
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator()
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Gray.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (imageUrl != null) {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = "Random dog image",
+                            modifier = Modifier
+                                .size(120.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                    } else {
+                        Text("No photo", color = Color.Gray)
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = dogName,
+                onValueChange = { dogName = it },
+                label = { Text("Dog's Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = dogBreed,
+                onValueChange = { dogBreed = it },
+                label = { Text("Dog's Breed") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            Button(
+                onClick = {
+                    if (isButtonEnabled) {
+                        onDogAdded(Dog(name = dogName, breed = dogBreed, imageUrl = imageUrl))
+                    }
+                },
+                enabled = isButtonEnabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(buttonColor),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent)
+            ) {
+                Text("Add Dog", color = buttonTextColor)
+            }
+        }
+    }
+}
+
+object RetrofitClient {
+    private const val BASE_URL = "https://dog.ceo/api/"
+
+    val apiService: DogApiService by lazy {
+        val contentType = "application/json".toMediaType()
+        val json = Json {
+            ignoreUnknownKeys = true
+        }
+
+        Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(json.asConverterFactory(contentType))
+            .build()
+            .create(DogApiService::class.java)
     }
 }
