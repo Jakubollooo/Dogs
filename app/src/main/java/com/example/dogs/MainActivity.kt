@@ -310,9 +310,9 @@ fun DogItem(
                     model = dog.imageUrl,
                     contentDescription = "Dog image of ${dog.name}",
                     modifier = Modifier
-                        .size(40.dp) // Ustalony rozmiar kwadratu
+                        .size(40.dp)
                         .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop // Dodane ContentScale.Crop
+                    contentScale = ContentScale.Crop
                 )
             } else {
                 Box(
