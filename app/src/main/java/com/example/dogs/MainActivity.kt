@@ -650,13 +650,15 @@ fun AddDogScreen(
                 value = dogName,
                 onValueChange = { dogName = it },
                 label = { Text("Dog's Name") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
             OutlinedTextField(
                 value = dogBreed,
                 onValueChange = { dogBreed = it },
                 label = { Text("Dog's Breed") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
 
             if (errorMessage != null) {
